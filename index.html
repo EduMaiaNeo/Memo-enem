@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Desafio do Saber</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #333; /* Fundo grafite escuro */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Merriweather', serif;
+        }
+
+        #game-container {
+            width: 100%;
+            max-width: 600px; /* Largura máxima para telas maiores */
+            height: auto;
+            aspect-ratio: 9 / 16; /* Proporção 9x16 */
+            background-color: #333;
+            overflow: hidden; /* Garante que o jogo não ultrapasse as dimensões */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Uma sombra sutil */
+            border-radius: 10px; /* Bordas arredondadas */
+        }
+        /* Estilos para os botões */
+        .button {
+            background-color: #555; /* Grafite claro */
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3); /* Efeito de relevo */
+            transition: background-color 0.3s ease; /* Transição suave */
+        }
+
+        .button:hover {
+            background-color: #777; /* Escurece um pouco ao passar o mouse */
+        }
+
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script>
+
+        var config = {
+            type: Phaser.AUTO,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            parent: 'game-container', // O elemento pai
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        var game = new Phaser.Game(config);
+        let questoes;
+        let questaoAtual = 0;
+        let materia = 'Matematica'; // Defina a matéria inicial
+        let fase = 'Fase 1'; // Defina a fase inicial
+        let pontuacao = 0;
+        let faseAtual = 1;
+        let textoQuestao;
+        let botoes = [];
+        let tempoRestante = 60;
+        let tempoTexto;
+        let timerEvent;
+        let estaPausado = false;
+        const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbwHCqyFCnXGNrK-Gu6ifuuFsXHZhXTSFwuz6GHw1DrF7XWZoj1-xM14w2PpOWvfn3Zu_w/exec';
+
+        function preload() {
+            // Aqui você pode carregar imagens, sons, etc.
+        }
+
+        function create() {
+            // Inicializa a interface do usuário (UI)
+            criarUI();
+
+            // Carrega as questões da API
+            carregarQuestoes();
+
+            // Ajusta o tamanho da tela quando redimensionada
+            window.addEventListener('resize', resize);
+            resize();
+
+            // Configura o cronômetro
+            timerEvent = this.time.addEvent({
+                delay: 1000,
+                callback: atualizarTempo,
+                callbackScope: this,
+                loop: true
+            });
+        }
+
+        function update() {
+            // Lógica do jogo que é executada a cada frame
+        }
+
+        function criarUI() {
+            // Estilo do texto
+            const estiloTexto = {
+                fontFamily: 'Merriweather',
+                fontSize: '20px',
+                color: '#fff',
+                wordWrap: { width: game.config.width - 50, useAdvancedWrap: true }
+            };
+
+            // Caixa de texto para a questão
+            textoQuestao = this.add.text(25, 20, 'Carregando...', estiloTexto);
+
+            // Botões de resposta
+            const espacamentoBotoes = 120;
+            for (let i = 0; i < 6; i++) {
+                botoes[i] = this.add.text(25, espacamentoBotoes + i * 50, '', estiloTexto)
+                    .setInteractive()
+                    .on('pointerdown', function () {
+                        selecionarResposta(i);
+                    });
+            }
+
+            // Texto da pontuação e fase
+            pontuacaoTexto = this.add.text(game.config.width - 200, 20, 'Fase: ' + faseAtual + ' Pontos: ' + pontuacao, {
+                fontFamily: 'Merriweather',
+                fontSize: '16px',
+                color: '#fff'
+            });
+
+            // Texto do tempo
+            tempoTexto = this.add.text(game.config.width - 200, 50, 'Tempo: ' + tempoRestante, {
+                fontFamily: 'Merriweather',
+                fontSize: '16px',
+                color: '#fff'
+            });
+
+            // Botão de pausa
+            botaoPausa = this.add.text(game.config.width - 100, 80, 'Pausar', {
+                fontFamily: 'Merriweather',
+                fontSize: '16px',
+                color: '#fff'
+            })
+                .setInteractive()
+                .on('pointerdown', togglePause);
+        }
+
+        function carregarQuestoes() {
+            let url = URL_SCRIPT + '?action=getQuestoes&materia=' + materia + '&fase=' + fase;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        questoes = data.questoes;
+                        mostrarQuestao();
+                    } else {
+                        console.error('Erro ao carregar questões:', data.message);
+                        textoQuestao.setText('Erro ao carregar questões: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar questões:', error);
+                    textoQuestao.setText('Erro ao carregar questões: ' + error);
+                });
+        }
+
+        function mostrarQuestao() {
+            if (questoes && questaoAtual < questoes.length) {
+                textoQuestao.setText(questoes[questaoAtual].questao);
+
+                for (let i = 0; i < 6; i++) {
+                    botoes[i].setText(questoes[questaoAtual].alternativas[i]);
+                }
+            } else {
+                textoQuestao.setText('Fim do jogo!');
+            }
+        }
+
+        function selecionarResposta(indice) {
+            if (questoes && questaoAtual < questoes.length) {
+                let respostaSelecionada = questoes[questaoAtual].alternativas[indice];
+
+                if (respostaSelecionada === questoes[questaoAtual].respostaCorreta) {
+                    pontuacao += 10;
+                    pontuacaoTexto.setText('Fase: ' + faseAtual + ' Pontos: ' + pontuacao);
+                    proximaQuestao();
+                } else {
+                    pontuacao -= 5;
+                    pontuacaoTexto.setText('Fase: ' + faseAtual + ' Pontos: ' + pontuacao);
+                }
+            }
+        }
+
+        function proximaQuestao() {
+            questaoAtual++;
+
+            if (questaoAtual < questoes.length) {
+                mostrarQuestao();
+            } else {
+                // Avançar para a próxima fase
+                questaoAtual = 0;
+                avancarFase();
+            }
+        }
+
+        function avancarFase() {
+            faseAtual++;
+            // Lógica para atualizar a fase e matéria com base na faseAtual
+            if (faseAtual <= 5) {
+                fase = 'Fase ' + faseAtual;
+                carregarQuestoes(); // Carrega as questões da nova fase
+            } else {
+                textoQuestao.setText('Parabéns! Você completou todas as fases!');
+                // Desativar interatividade dos botões
+                botoes.forEach(botao => botao.disableInteractive());
+                timerEvent.paused = true; // Pausa o cronômetro
+            }
+            pontuacaoTexto.setText('Fase: ' + faseAtual + ' Pontos: ' + pontuacao);
+        }
+
+        function atualizarTempo() {
+            if (!estaPausado) {
+                tempoRestante--;
+                tempoTexto.setText('Tempo: ' + tempoRestante);
+
+                if (tempoRestante === 0) {
+                    proximaQuestao();
+                    tempoRestante = 60; // Reinicia o tempo para a próxima questão
+                }
+            }
+        }
+
+        function togglePause() {
+            estaPausado = !estaPausado;
+            if (estaPausado) {
+                timerEvent.paused = true;
+                botaoPausa.setText('Retomar');
+            } else {
+                timerEvent.paused = false;
+                botaoPausa.setText('Pausar');
+            }
+        }
+
+        function resize() {
+            var width = window.innerWidth;
+            var height = window.innerHeight;
+
+            game.scale.resize(width, height);
+
+            // Atualiza a posição dos elementos da interface do usuário
+            if (pontuacaoTexto) {
+                pontuacaoTexto.setPosition(width - 200, 20);
+            }
+            if (tempoTexto) {
+                tempoTexto.setPosition(width - 200, 50);
+            }
+            if (botaoPausa) {
+                botaoPausa.setPosition(width - 100, 80);
+            }
+            if (textoQuestao) {
+                textoQuestao.setStyle({ wordWrap: { width: width - 50, useAdvancedWrap: true } });
+            }
+        }
+    </script>
+</body>
+</html>
